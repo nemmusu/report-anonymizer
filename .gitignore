@@ -1,0 +1,89 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Pytest / Hypothesis / Mypy / Coverage
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Project runtime artifacts
+applied_substitutions.json
+auto_promoted_t0.yml
+auto_promoted_t1.yml
+needs_review.yml
+decisions_history.jsonl
+verifier_report.md
+.run_state*
+
+# Migration backups
+*.yml.bak
+*.json.bak
+
+# MkDocs build output
+site/
+
+# Claude Code session metadata
+.claude/
+
+# AppImage build artefacts (downloaded interpreter, packaged AppImage).
+# The build script regenerates everything from upstream pins.
+packaging/appimage/build-cache/
+packaging/appimage/dist/
+
+# .deb build artefacts (staged AppDir + final .deb). The build
+# script regenerates them from the project tree on every run.
+packaging/deb/build-cache/
+packaging/deb/dist/
+
+/image_inventory.yml
+/.anon/
+
+# Bundled GGUF models (kept locally for benchmarking only)
+*.gguf
+model/
+
+# Windows build artifacts (Fase 2+)
+packaging/windows/build-cache/
+packaging/windows/staging/
+packaging/windows/dist/
+packaging/windows/launcher/*.exe
+packaging/windows/launcher/*.ico
+packaging/windows/launcher/*.res
+packaging/windows/launcher/app_icon_*.gen.rc
+packaging/windows/PLAN.md
+# Per-run build / installer / smoke-test transcripts that the
+# packaging scripts dump into the same folder; we don't version
+# them, the workflow logs already preserve them in CI.
+packaging/windows/*.log
+packaging/windows/*.err.log
+packaging/windows/*.log.err
+packaging/windows/nul.pdf
+packaging/windows/iscc.log
+packaging/windows/iscc.err.log
+packaging/windows/.iscc-current-pid.txt
+packaging/windows/.iscc-current-stamp.txt
+
+# Local pytest basetemp override (see tests/conftest.py docstring).
+.pytest_tmp/
+

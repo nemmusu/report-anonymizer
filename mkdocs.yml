@@ -1,0 +1,96 @@
+site_name: Report Anonymizer
+site_description: >-
+  Local LLM anonymizer for penetration-test reports. Drops customer
+  identifiers (brand, IPs, credentials, advisory IDs, app packages,
+  AD SIDs, cloud resource ids) while leaving exploit logic, payloads
+  and shell output intact.
+site_url: https://nemmusu.github.io/report-anonymizer/
+repo_url: https://github.com/nemmusu/report-anonymizer
+repo_name: nemmusu/report-anonymizer
+edit_uri: edit/master/
+
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      # Mermaid blocks render natively in the GitHub markdown
+      # preview AND in the Pages site once Material picks up the
+      # custom_fences hook.
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      base_path:
+        - .
+        - docs
+      check_paths: true
+  # Material icon + emoji shortcodes (``:material-debian:``,
+  # ``:octicons-download-16:`` etc.) used by the landing page's
+  # download cards and badges. Without this extension the
+  # shortcodes render as literal text.
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - What it anonymizes: anonymization-scope.md
+  - Benchmarks: benchmarks.md
+  - Architecture: architecture.md
+  - Presets: presets.md
+  - Windows install: install-windows.md
+  - FAQ: faq.md
+  - Contributing: contributing.md
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search

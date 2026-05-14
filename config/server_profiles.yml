@@ -1,0 +1,136 @@
+version: 1
+# Built-in server presets. User additions go to ~/.config/document-anonymizer/server.yml
+# Per-project overrides go to <output_dir>/.anon/server.yml.
+# See anonymize/server_profile.py for the full schema.
+#
+# Curation policy
+# ---------------
+# * Top 5 by detection quality (see ``BENCHMARKS.md``). Underperformers
+#   and architecturally-incompatible models are dropped from the
+#   built-in set; users can still pick them via the Model Manager
+#   free-text search and clone any preset for an edit.
+# * Quality first, format second: a quant earns the slot when it
+#   beats the next contender outright.
+# * ``default`` is the recommended starting point for new users
+#   (lightest CPU-only setup); ``cpu_only`` is the BF16 CPU fallback.
+# * KV cache stays at f16 across the board.
+# * Context sizes are sized for chunked work (12K-16K). The detector
+#   feeds ~7 400-token requests; anything past 16K (with
+#   ``parallel: 1``) is wasted KV cache.
+# * VRAM figures in descriptions are *measured*; re-measure after
+#   editing if you change ctx / parallel.
+
+profiles:
+  # === Highest quality (Ministral 3 · 8B Reasoning, full-precision) =======
+  # Quality leader: catches almost every leak (~9 of 10) while
+  # keeping false alarms low. ``enable_thinking: false`` is sent
+  # by the LLM client so the model skips its internal reasoning step.
+  - name: ministral-3-8b-reasoning-bf16
+    description: "🥇 Ministral 3 · 8B Reasoning. Quality 83/100. Catches almost every leak. Needs about 18.5 GB GPU memory and 4 minutes on the 5-PDF test."
+    is_builtin: true
+    extends: default
+    model_repo: unsloth/Ministral-3-8B-Reasoning-2512-GGUF
+    model_filename: Ministral-3-8B-Reasoning-2512-BF16.gguf
+    model: ~/.local/share/document-anonymizer/models/unsloth__Ministral-3-8B-Reasoning-2512-GGUF/Ministral-3-8B-Reasoning-2512-BF16.gguf
+    ctx_size: 16384
+    parallel: 2
+    # GPU profile, pinned explicitly because ``default`` is CPU-only.
+    n_gpu_layers: 99
+    flash_attn: true
+
+  # === Near-leader quality on a 12 GB GPU (rtila Assistant Lite, Qwen 9B Q4) ===
+  # Quality essentially tied with the leader at one third of the
+  # VRAM (~7 GB peak vs ~18 GB). 5.2 GB on disk, best
+  # quality-per-VRAM in the catalog.
+  - name: rtila-qwen3.5-9b-q4
+    description: "🥈 rtila Assistant Lite · 9B Q4. Quality 82/100 at ~7 GB VRAM (vs 18 GB for the leader). Best quality-per-VRAM in the catalog."
+    is_builtin: true
+    extends: default
+    model_repo: rtila-corporation/rtila-assistant-lite-1.5
+    model_filename: qwen3.5-9b-Q4_K_M.gguf
+    model: ~/.local/share/document-anonymizer/models/rtila-corporation__rtila-assistant-lite-1.5/qwen3.5-9b-Q4_K_M.gguf
+    ctx_size: 12288
+    parallel: 1
+    n_gpu_layers: 99
+    flash_attn: true
+
+  # === Best small-model pick (Jackrong 4B Claude-Opus distill Q4) ============
+  # Beats the legacy 4B BF16 default by 14 points on Quality at
+  # one third of the disk footprint (2.5 GB). Fits a 6 GB GPU.
+  - name: jackrong-qwen3.5-4b-distill-q4
+    description: "★ Recommended · 🥉 Qwen 3.5 · 4B Claude-Opus distill Q4. Quality 78/100, only 2.5 GB on disk. Best 'small + good' pick on a GPU, fits a 6 GB GPU."
+    is_builtin: true
+    extends: default
+    model_repo: Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF
+    model_filename: Qwen3.5-4B.Q4_K_M.gguf
+    model: ~/.local/share/document-anonymizer/models/Jackrong__Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF/Qwen3.5-4B.Q4_K_M.gguf
+    ctx_size: 12288
+    parallel: 1
+    n_gpu_layers: 99
+    flash_attn: true
+
+  # === Fewest false alarms (Qwen 3.5 9B BF16) ==============================
+  # Highest precision in the curated set: pick when you'd rather
+  # miss one leak than chase a false alert.
+  - name: qwen3.5-9b-bf16
+    description: "⭐ Qwen 3.5 · 9B BF16. Quality 78/100, fewest false alarms (precision 80%). Needs about 17.6 GB GPU memory and 3.5 minutes on the 5-PDF test."
+    is_builtin: true
+    extends: default
+    model_repo: unsloth/Qwen3.5-9B-GGUF
+    model_filename: Qwen3.5-9B-BF16.gguf
+    model: ~/.local/share/document-anonymizer/models/Qwen3.5-9B-BF16.gguf
+    parallel: 1
+    ctx_size: 16384
+    n_gpu_layers: 99
+    flash_attn: true
+
+  # === Reasoning that fits a 12 GB GPU (Ministral 3 · 8B Reasoning, Q5) ======
+  # Same model as the quality leader at half the VRAM. Catches the
+  # same fraction of leaks (recall identical) but raises a few more
+  # false alarms.
+  - name: ministral-3-8b-reasoning-q5
+    description: "⭐ Ministral 3 · 8B Reasoning Q5_K_M. Quality 76/100, fits a 12 GB GPU. Needs ~9.2 GB VRAM and 2 minutes on the 5-PDF test."
+    is_builtin: true
+    extends: ministral-3-8b-reasoning-bf16
+    model_repo: unsloth/Ministral-3-8B-Reasoning-2512-GGUF
+    model_filename: Ministral-3-8B-Reasoning-2512-Q5_K_M.gguf
+    model: ~/.local/share/document-anonymizer/models/unsloth__Ministral-3-8B-Reasoning-2512-GGUF/Ministral-3-8B-Reasoning-2512-Q5_K_M.gguf
+
+  # === Default (smallest + best on CPU) ===================================
+  # Smallest GGUF of any curated preset (~2.5 GB on disk) that
+  # still scores Q=78 on the 5-PDF pentest corpus, a Claude-Opus
+  # reasoning distill of Qwen 3.5 4B in Q4_K_M, routed to CPU. Beats
+  # the previous Qwen 3.5 4B Q5_K_M default (Q=64) by 14 points at
+  # a smaller download. ``default`` is the base every other preset
+  # extends, so it carries the full ``llama-server`` config, GPU
+  # presets pin ``n_gpu_layers: 99`` / ``flash_attn: true`` explicitly.
+  - name: default
+    description: "★ Qwen 3.5 · 4B Claude-Opus distill Q4_K_M on CPU. Smallest+best preset (Q=78, ~2.5 GB). No GPU required."
+    is_builtin: true
+    binary: llama-server
+    model_repo: Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF
+    model_filename: Qwen3.5-4B.Q4_K_M.gguf
+    model: ~/.local/share/document-anonymizer/models/Jackrong__Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF/Qwen3.5-4B.Q4_K_M.gguf
+    host: 127.0.0.1
+    port: 8080
+    parallel: 1
+    ctx_size: 12288
+    n_gpu_layers: 0
+    threads: 18
+    batch_size: 8192
+    ubatch_size: 512
+    flash_attn: false
+    mmap: true
+    no_warmup: true
+    cache_prompt: true
+    cache_type_k: f16
+    cache_type_v: f16
+    chat_template: null
+    jinja: true
+    sampling:
+      temperature: 0.3
+      top_k: 20
+      top_p: 0.8
+      min_p: 0.0
+      repeat_penalty: 1.0
+      presence_penalty: 0.0

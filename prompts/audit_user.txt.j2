@@ -1,0 +1,21 @@
+{% if file_rel %}File: {{ file_rel }}
+{% endif %}{% if seg_id %}Segment: {{ seg_id }}
+{% endif %}Substitution map (already applied by the pipeline; use as
+ground truth for what counts as a leak and how to rewrite it):
+
+```
+{% for entry in map_entries -%}
+{{ entry.from }} -> {{ entry.to }}    [{{ entry.category }}]
+{% endfor %}
+```
+
+Anonymized chunk to audit (raw, between triple backticks):
+
+```
+{{ chunk_text }}
+```
+
+Identify every residual occurrence of any value from the map (in any
+case variant), plus sub-tokens / concatenations / likely typos of
+those values, following the rules in the system prompt. Reply with
+JSON only; no markdown.

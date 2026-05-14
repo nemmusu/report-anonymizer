@@ -1,0 +1,82 @@
+name: Build Windows installer
+
+# Triggered manually or by the release workflow (which fans out to
+# both Linux + Windows builders and uploads their artefacts to the
+# matching GitHub Release). Producing the EXE outside of a tagged
+# release is also useful for reproducibility checks.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version override (defaults to pyproject.toml :: version)"
+        required: false
+        default: ""
+  workflow_call:
+    inputs:
+      version:
+        description: "Version override forwarded by release.yml"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python (host toolchain)
+        # The build script bootstraps its OWN embedded Python under
+        # packaging/windows/build-cache/. This Python is only used to
+        # parse pyproject.toml + drive helper scripts.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run packaging/windows/build.ps1
+        shell: pwsh
+        env:
+          # The runner's %TEMP% is small and gets wiped between
+          # steps; pin a project-local pip cache so the build
+          # remains idempotent across retries.
+          PIP_CACHE_DIR: "${{ github.workspace }}\\packaging\\windows\\build-cache\\pip-cache"
+          # ``prepare-payload.ps1`` queries the GitHub REST API for
+          # the latest ``ggml-org/llama.cpp`` release tag. Anonymous
+          # calls share the runner public-IP's 60 req/h pool and are
+          # routinely throttled (the previous run died with ``403
+          # rate limit exceeded``). Expose ``GITHUB_TOKEN`` so the
+          # script can authenticate and lift the limit to 1000 req/h.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = "${{ inputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            & ".\packaging\windows\build.ps1"
+          } else {
+            & ".\packaging\windows\build.ps1" -Version $version
+          }
+
+      - name: Upload installer artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: packaging/windows/dist/Report-Anonymizer-Setup-x64-*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload SHA256 manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-sha256
+          path: packaging/windows/dist/Report-Anonymizer-Setup-x64-*.sha256.txt
+          if-no-files-found: error
+          retention-days: 30

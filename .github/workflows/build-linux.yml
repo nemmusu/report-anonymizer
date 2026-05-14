@@ -1,0 +1,100 @@
+name: Build Linux artefacts
+
+# Builds the .deb + AppImage for Debian/Ubuntu/Mint and any other
+# glibc-based distribution. Mirrors ``build-windows.yml``: invoked
+# manually or fanned out by ``release.yml`` on tag push.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version override (defaults to pyproject.toml :: version)"
+        required: false
+        default: ""
+      target:
+        description: "Build target (both / deb / appimage)"
+        required: false
+        default: "both"
+        type: choice
+        options: [both, deb, appimage]
+  workflow_call:
+    inputs:
+      version:
+        description: "Version override forwarded by release.yml"
+        required: false
+        default: ""
+        type: string
+      target:
+        description: "Build target forwarded by release.yml"
+        required: false
+        default: "both"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-linux-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential dpkg-dev fakeroot \
+            file imagemagick \
+            libfuse2 \
+            poppler-utils \
+            curl wget jq
+
+      - name: Run packaging/build-all.sh
+        run: |
+          set -euo pipefail
+          version='${{ inputs.version }}'
+          target='${{ inputs.target }}'
+          args=()
+          if [[ -n "$version" ]]; then
+            args+=(--version "$version")
+          fi
+          case "$target" in
+            deb)
+              args+=(--only deb)
+              ;;
+            appimage)
+              args+=(--only appimage)
+              ;;
+            *)
+              ;;
+          esac
+          chmod +x packaging/build-all.sh
+          ./packaging/build-all.sh "${args[@]}"
+
+      - name: Upload .deb artefact
+        if: inputs.target != 'appimage'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: packaging/deb/dist/report-anonymizer_*_amd64.deb
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload AppImage artefact
+        if: inputs.target != 'deb'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: packaging/appimage/dist/Report-Anonymizer-*x86_64.AppImage
+          if-no-files-found: error
+          retention-days: 30

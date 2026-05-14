@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Report Anonymizer
+GenericName=Document Anonymizer
+Comment=Local LLM-driven anonymizer for penetration-test reports
+Exec=AppRun %F
+Icon=document-anonymizer
+Categories=Office;Security;Utility;
+Terminal=false
+StartupNotify=true
+MimeType=application/pdf;text/markdown;text/html;application/vnd.openxmlformats-officedocument.wordprocessingml.document;
+Keywords=anonymize;redact;pentest;security;report;

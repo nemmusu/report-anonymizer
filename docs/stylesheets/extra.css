@@ -1,0 +1,151 @@
+/* Landing-page polish for the MkDocs Material site.
+ *
+ * Scoped to the ``hero-*`` classes used on docs/index.md plus a
+ * couple of refinements to the grid-card layout so the install /
+ * documentation cards line up evenly. Everything else falls back
+ * to the default Material theme.
+ */
+
+/* Hero lead paragraph: the long-form descriptor right under the
+ * page title. We bump the font size slightly so it reads as a
+ * proper subtitle, and constrain its measure for legibility. */
+.md-typeset .hero-lead {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  max-width: 52rem;
+  margin: 1rem 0 1.5rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* Hero call-to-action row: stacks the primary download button next
+ * to the secondary GitHub / release-notes ones. A small gap keeps
+ * them visually grouped without crowding. */
+.md-typeset .hero-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 0.75rem;
+  margin: 1rem 0 1rem;
+  align-items: center;
+}
+
+/* The buttons themselves get a tiny lift and rounder corners so
+ * they read as a polished CTA, not the default link-style. */
+.md-typeset .hero-cta .md-button {
+  padding: 0.55rem 1.15rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.md-typeset .hero-cta .md-button--primary {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1),
+              0 4px 12px rgba(31, 59, 91, 0.12);
+}
+
+.md-typeset .hero-cta .md-button--primary:hover {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12),
+              0 6px 18px rgba(31, 59, 91, 0.2);
+  transform: translateY(-1px);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+/* Compact metadata row right under the CTA: shows licence, test
+ * count, runtime, install paths. Muted so it does not compete
+ * with the buttons above. */
+.md-typeset .hero-meta {
+  font-size: 0.82rem;
+  color: var(--md-default-fg-color--light);
+  margin: 0.5rem 0 1.5rem;
+  line-height: 1.7;
+}
+
+.md-typeset .hero-meta a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dashed var(--md-default-fg-color--lightest);
+}
+
+.md-typeset .hero-meta a:hover {
+  color: var(--md-accent-fg-color);
+  border-bottom-color: var(--md-accent-fg-color);
+}
+
+/* Hero shot: the diff-view screenshot under the CTA. Subtle
+ * shadow and rounded corners give it the look of a product
+ * marquee instead of a bare PNG. */
+.md-typeset img.hero-shot {
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06),
+              0 16px 40px rgba(31, 59, 91, 0.12);
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Tighten the figure caption under the hero shot so it reads as
+ * a single supporting line, not a paragraph. */
+.md-typeset figure > figcaption {
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* Make the grid cards a bit airier and add a faint border so they
+ * read as discrete cards even on the default light theme. */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid.cards > div > div {
+  border-radius: 10px;
+  border-color: var(--md-default-fg-color--lightest);
+  transition: border-color 150ms ease, transform 120ms ease,
+              box-shadow 150ms ease;
+}
+
+.md-typeset .grid.cards > ul > li:hover,
+.md-typeset .grid.cards > div > div:hover {
+  border-color: var(--md-accent-fg-color--transparent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(31, 59, 91, 0.08);
+}
+
+/* Card titles: bigger, tighter, and the leading icon gets a
+ * subtle accent colour so it reads as a label not decoration. */
+.md-typeset .grid.cards > ul > li > p:first-child,
+.md-typeset .grid.cards > div > div > p:first-child {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.md-typeset .grid.cards .twemoji.lg {
+  color: var(--md-primary-fg-color);
+}
+
+/* The "★ Recommended" pill sitting next to AppImage in the install
+ * cards. Small, gold-ish, non-shouty. */
+.md-typeset .star-recommended svg {
+  color: #d4a017;
+  vertical-align: middle;
+}
+
+/* "Star on GitHub" button: subtle gold-tinted hover, no fill on
+ * idle state, so it sits next to the other secondary buttons
+ * without competing with the primary Download CTA. */
+.md-typeset .hero-cta .md-button--star svg {
+  color: #d4a017;
+}
+
+.md-typeset .hero-cta .md-button--star:hover {
+  background-color: #d4a017;
+  border-color: #d4a017;
+  color: #fff;
+}
+
+.md-typeset .hero-cta .md-button--star:hover svg {
+  color: #fff;
+}
+
+/* Inside the install-section CTA, our buttons live INSIDE a card.
+ * Match the hero-CTA polish so the visual language is consistent
+ * across the page. */
+.md-typeset .grid.cards .md-button {
+  border-radius: 999px;
+  font-weight: 600;
+  margin-top: 0.4rem;
+}

@@ -1,0 +1,14 @@
+Candidates to review (proposed by the detector LLM):
+
+```json
+{{ candidates_json }}
+```
+
+{% if context %}Context (snippet of the file where the candidates were found):
+
+```
+{{ context }}
+```
+{% endif %}
+
+For each candidate decide `is_real_leak`, `category_correct`, `placeholder_safe`, `critic_confidence`, `note`. Reply ONLY with JSON `{"verdict":[...]}`.

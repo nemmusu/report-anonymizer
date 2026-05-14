@@ -1,0 +1,143 @@
+name: Release
+
+# Tag-driven release pipeline. Triggers on every ``v*`` tag push +
+# manual dispatch. Fans out to ``build-windows.yml`` and
+# ``build-linux.yml`` (via ``workflow_call``), collects their
+# artefacts, and uploads them to the matching GitHub Release.
+#
+# Version policy:
+#
+# * ``v1.0.0`` is the **iterative** release: every push to that tag
+#   re-uploads the artefacts with ``--clobber`` so we can refresh the
+#   binaries during the initial rollout without burning new tags.
+# * ``v1.0.1`` and later are **immutable**: uploads use the default
+#   (refuse to overwrite). To re-issue an asset, bump the tag.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v1.0.0). Required for manual runs."
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-linux:
+    uses: ./.github/workflows/build-linux.yml
+    secrets: inherit
+    with:
+      version: ""
+      target: both
+
+  build-windows:
+    uses: ./.github/workflows/build-windows.yml
+    secrets: inherit
+    with:
+      version: ""
+
+  publish:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag name
+        id: tag
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download .deb artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-deb
+          path: dist
+
+      - name: Download AppImage artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-appimage
+          path: dist
+
+      - name: Download Windows installer artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist
+
+      - name: Download Windows installer SHA256 manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer-sha256
+          path: dist
+
+      - name: List artefacts
+        run: ls -lh dist
+
+      - name: Ensure release exists and notes are fresh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag='${{ steps.tag.outputs.name }}'
+          # Strip the leading ``v`` to map ``v1.0.0`` -> ``1.0.0`` so we
+          # can lift the matching section header out of CHANGELOG.md.
+          version="${tag#v}"
+          notes_file="$(mktemp)"
+          if [[ -f CHANGELOG.md ]]; then
+            awk -v ver="$version" '
+              BEGIN { in_section = 0 }
+              /^## \[/ {
+                if (in_section) { exit }
+                if ($0 ~ "^## \\[" ver "\\]") { in_section = 1; next }
+              }
+              in_section { print }
+            ' CHANGELOG.md > "$notes_file" || true
+          fi
+          if [[ ! -s "$notes_file" ]]; then
+            echo "Automated release for $tag. See CHANGELOG.md for the full diff." > "$notes_file"
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Iterative-tag policy (v1.0.0 specifically) re-runs publish
+            # multiple times; refresh the release body each run so it
+            # reflects the current CHANGELOG instead of the bootstrap
+            # placeholder created on the first push.
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
+              --notes-file "$notes_file"
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+              --title "$tag" \
+              --notes-file "$notes_file"
+          fi
+
+      - name: Upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag='${{ steps.tag.outputs.name }}'
+          # Iterative policy: v1.0.0 re-uploads with --clobber so we
+          # can refresh the binaries during the initial rollout
+          # without minting a fresh tag. From v1.0.1 onwards uploads
+          # refuse to overwrite (immutable releases).
+          if [[ "$tag" == "v1.0.0" ]]; then
+            extra_flags="--clobber"
+          else
+            extra_flags=""
+          fi
+          # shellcheck disable=SC2086
+          gh release upload "$tag" dist/* --repo "$GITHUB_REPOSITORY" $extra_flags

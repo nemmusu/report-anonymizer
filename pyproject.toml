@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "document-anonymizer-production"
+version = "1.0.0"
+description = "Local LLM-assisted document anonymization with PySide6 GUI"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Report Anonymizer contributors" }]
+license = { text = "GPL-3.0-or-later" }
+keywords = [
+    "anonymization", "redaction", "pii", "llm", "llama.cpp",
+    "pdf", "docx", "penetration-test", "report",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications :: Qt",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business",
+    "Topic :: Security",
+    "Topic :: Text Processing :: General",
+]
+
+[project.urls]
+Homepage      = "https://nemmusu.github.io/report-anonymizer/"
+Repository    = "https://github.com/nemmusu/report-anonymizer"
+Issues        = "https://github.com/nemmusu/report-anonymizer/issues"
+Changelog     = "https://github.com/nemmusu/report-anonymizer/blob/master/CHANGELOG.md"
+Documentation = "https://nemmusu.github.io/report-anonymizer/"
+Download      = "https://github.com/nemmusu/report-anonymizer/releases/latest"
+
+[tool.setuptools]
+packages = ["anonymize", "anonymize.format_adapters", "gui"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"anonymize" = ["../config/*.yml", "../prompts/*.txt", "../prompts/*.j2"]
+"gui" = ["icons/*.svg"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers -q"
+markers = [
+    "slow: tests that take more than ~2s",
+    "gui: tests that require PySide6 (offscreen)",
+    "integration: end-to-end pipeline tests",
+    "perf: performance smoke tests (warn-only)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [".venv", "build", "dist", "tests/golden"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+no_implicit_optional = true
+warn_unused_ignores = true
+
+[tool.coverage.run]
+branch = true
+source = ["anonymize", "gui"]
+omit = ["tests/*", ".venv/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

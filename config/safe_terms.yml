@@ -1,0 +1,274 @@
+version: 1
+# Standard / generic terms that the LLM critic should NEVER flag as leaks.
+# Both the detector prompt (as a "do not flag" hint) and the post-filter use
+# this list. Add any project-specific safe term here.
+safe:
+  # Crypto primitives / standards
+  - AES
+  - AES-128
+  - AES-256
+  - AES-CBC
+  - AES-CTR
+  - AES-GCM
+  - SHA-1
+  - SHA-256
+  - SHA-512
+  - SHA3
+  - HMAC
+  - HMAC-SHA256
+  - HMAC-SHA1
+  - PBKDF2
+  - bcrypt
+  - scrypt
+  - Argon2
+  - Curve25519
+  - Ed25519
+  - X25519
+  - RSA
+  - RSA-2048
+  - RSA-4096
+  - ECDSA
+  - ECDH
+  - Diffie-Hellman
+  - Triple DES
+  - 3DES
+  - ChaCha20
+  - Poly1305
+  - GCM
+  - CCM
+  - X.509
+
+  # Protocols / formats
+  - JSON
+  - YAML
+  - XML
+  - HTML
+  - CSV
+  - TLS
+  - SSL
+  - HTTP
+  - HTTPS
+  - FTP
+  - SFTP
+  - SSH
+  - SMTP
+  - POP3
+  - IMAP
+  - DNS
+  - DHCP
+  - SIP
+  - SDP
+  - SRTP
+  - ZRTP
+  - RTP
+  - RTCP
+  - WebRTC
+  - WebSocket
+  - REST
+  - GraphQL
+  - gRPC
+  - Protobuf
+
+  # Auth / API
+  - OAuth
+  - OAuth2
+  - OpenID
+  - JWT
+  - SAML
+  - LDAP
+  - Kerberos
+
+  # RFCs / placeholder address blocks (covered by allow regex but listed here
+  # as an extra safety net for the LLM)
+  - RFC 1918
+  - RFC 5737
+  - RFC 6890
+  - 192.0.2.0/24
+  - 198.51.100.0/24
+  - 203.0.113.0/24
+  - 127.0.0.1
+  - 0.0.0.0
+  - localhost
+  - 8.8.8.8
+  - 1.1.1.1
+
+  # Generic security terms
+  - MITM
+  - DoS
+  - DDoS
+  - CSRF
+  - XSS
+  - SQL injection
+  - CWE
+  - CVSS
+  - CVE
+  - OWASP
+  - CIS
+
+  # Generic Android/iOS terms
+  - Android
+  - iOS
+  - APK
+  - AAB
+  - IPA
+  - Gradle
+  - Activity
+  - Service
+  - Intent
+  - SharedPreferences
+  - SharedPrefs
+  - WorkManager
+  - Firebase
+  - FirebaseMessaging
+
+  # Generic protocol IDs
+  - "ICMP"
+  - "TCP"
+  - "UDP"
+  - "QUIC"
+
+  # Misc generic
+  - PEM
+  - DER
+  - PKCS
+  - PKCS#7
+  - PKCS#11
+  - PKCS#12
+  - PKCS12
+  - JKS
+  - keystore
+  - truststore
+
+  # Standard libraries / SDKs the LLM keeps confusing for vendor brands
+  - NaCl
+  - libsodium
+  - libsignal
+  - sodium
+  - sodium_key
+  - sodium-key
+  - OpenSSL
+  - BoringSSL
+  - mbedTLS
+  - mbed TLS
+  - FCM
+  - APNS
+  - APNs
+  - OneSignal
+  - WebPush
+  - GCM
+  - Firebase Cloud Messaging
+  - Google Play Services
+  - Apple Push
+  - Sentry
+  - Datadog
+  - Crashlytics
+  - Retrofit
+  - OkHttp
+  - Volley
+  - Glide
+  - Picasso
+
+  # Web frameworks / servers
+  - Spring
+  - Spring Boot
+  - Express
+  - Flask
+  - Django
+  - Laravel
+  - Rails
+  - Tomcat
+  - Jetty
+  - nginx
+  - Apache
+  - HAProxy
+  - Caddy
+  - Cloudflare
+
+  # Pentest tooling and methodology terms (must stay readable in the report)
+  - Burp
+  - Burp Suite
+  - ZAP
+  - mitmproxy
+  - sqlmap
+  - nmap
+  - Metasploit
+  - Cobalt Strike
+  - Frida
+  - objection
+  - drozer
+  - APKTool
+  - jadx
+  - dex2jar
+  - Wireshark
+  - tcpdump
+  - Nikto
+  - Nessus
+  - OpenVAS
+  - JOSE
+  - JWE
+  - JWS
+  - JWA
+
+  # Generic security / threat-model terms
+  - RCE
+  - SSRF
+  - XXE
+  - LFI
+  - RFI
+  - IDOR
+  - SSRF
+  - SSTI
+  - CSRF
+  - XSS
+  - SQLi
+  - NoSQLi
+  - LDAP injection
+  - command injection
+  - path traversal
+  - prototype pollution
+  - prototype-pollution
+  - clickjacking
+  - open redirect
+  - tabnabbing
+  - rate limiting
+  - bruteforce
+  - credential stuffing
+  - 2FA
+  - MFA
+  - OTP
+  - TOTP
+  - HOTP
+
+  # Generic test / placeholder identifiers used IN the report
+  - VICTIM_PUB
+  - DEV_PUB
+  - OWN_KEY
+  - VITTIMA
+  - Lab1
+  - Lab2
+  - Lab3
+  - test_pubkey
+  - test_privkey
+  - alice
+  - bob
+  - carol
+  - eve
+  - mallory
+  - attaccante
+  - vittima
+  - PoC
+  - poc
+  - PoC.md
+
+  # Mobile/PC hardware test models (lab devices, not customer-identifying)
+  - Samsung SM-A920F
+  - Samsung Galaxy
+  - Pixel 7
+  - Pixel 8
+  - iPhone 14
+  - iPhone 15
+  - Xiaomi
+  - Redmi
+  - OnePlus
+  - Huawei
+  - SM-A920F

@@ -1,0 +1,16 @@
+{% if file_rel %}File: {{ file_rel }}
+{% endif %}{% if seg_id %}Segment: {{ seg_id }}
+{% endif %}{% if section %}Section: {{ section }}
+{% endif %}{% if category_hint %}Expected categories (hint): {{ category_hint }}
+{% endif %}{% if few_shot %}Recent operator-approved decisions (use as style reference):
+{% for ex in few_shot %}- {{ ex.value }} -> {{ ex.placeholder }}  ({{ ex.category }})
+{% endfor %}
+{% endif %}Text to analyse (raw, between triple backticks; may be in any language):
+
+```
+{{ chunk_text }}
+```
+
+Identify ALL anonymization candidates in the text above, following the
+rules in the system prompt. Reminder: no markdown in the response, only
+JSON with `{"candidates":[...]}`.

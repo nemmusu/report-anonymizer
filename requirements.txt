@@ -1,0 +1,41 @@
+# document-anonymizer-production - runtime dependencies
+# Core
+requests>=2.31
+PyYAML>=6.0
+Jinja2>=3.1
+
+# GUI
+PySide6>=6.6
+# Optional: QtWebEngine, used by the rendered diff view to display
+# HTML files with highlighted substitutions. Falls back to a notice
+# label when not present.
+PySide6-Addons>=6.6
+
+# Format adapters
+python-docx>=1.1.0
+python-pptx>=0.6.23
+openpyxl>=3.1.2
+odfpy>=1.4.1
+PyMuPDF>=1.24.0
+python-magic>=0.4.27
+charset-normalizer>=3.3
+
+# Hugging Face downloads + model search
+huggingface_hub>=0.24
+
+# Hardware detection / memory backpressure
+psutil>=5.9
+
+# HTML -> PDF rendering. Replaces wkhtmltopdf so the engine has no
+# system-level binary dependency for paged output. Pure Python on top
+# of Pango / Cairo (system libs that ship with any modern desktop
+# Linux). Required at runtime by anonymize/builder.py,
+# anonymize/templates.py, and the PDF re-derive adapter.
+weasyprint>=63
+
+# Windows-only bundled binaries (Option C strategy: Linux/macOS keep
+# using the system libmagic / pandoc; on Windows we ship them inside
+# pip wheels so the installer is self-contained). pip silently
+# ignores these markers on non-Windows platforms.
+python-magic-bin>=0.4.14; sys_platform == "win32"
+pypandoc-binary>=1.17; sys_platform == "win32"

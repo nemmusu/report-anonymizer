@@ -1,0 +1,22 @@
+version: 1
+options:
+  longest_first: true
+  case_insensitive_categories:
+  - brand
+  - network
+  - app_packages
+# Project-scope substitution maps live in ``<project>/substitution_map.yml``
+# and override per-folder. This top-level file is shipped intentionally
+# empty so a fresh checkout doesn't carry anyone's prior project data.
+brand: []
+network: []
+app_packages: []
+phones: []
+emails: []
+keys: []
+credentials: []
+headers: []
+user_agents: []
+ids: []
+infra_ids: []
+other: []

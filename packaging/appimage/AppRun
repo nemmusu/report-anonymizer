@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+#
+# Report Anonymizer · AppImage AppRun
+#
+# Bootstraps the bundled Python interpreter, prepends the bundled
+# tools directory to PATH so pandoc / pdftotext are picked up before
+# any system installs, and execs ``python -m gui.main`` with the
+# user's CLI arguments forwarded.
+#
+# Layout (built by packaging/appimage/build.sh):
+#   $APPDIR/
+#     AppRun                            (this file)
+#     document-anonymizer.desktop
+#     document-anonymizer.svg / .png
+#     usr/bin/python3                   (portable, python-build-standalone)
+#     usr/bin/pandoc                    (single Haskell binary)
+#     usr/bin/pdftotext                 (poppler-utils)
+#     usr/share/document-anonymizer/    (the repo: anonymize/, gui/, …)
+#       .venv/                          (site-packages installed at build)
+#
+# We deliberately *don't* clobber the user's HOME, $XDG_CONFIG_HOME
+# or model paths, the anonymizer's bootstrap logic still resolves
+# those via ``server_profile.MODELS_DIR`` so models persist across
+# AppImage updates.
+set -euo pipefail
+
+# $APPDIR is set by appimagetool's runtime when the AppImage is
+# extracted to a tmp mount. When the script is run directly out of
+# a built AppDir (e.g. during `./build.sh && ./AppDir/AppRun`),
+# fall back to the script's own directory.
+HERE="$(dirname -- "$(readlink -f -- "$0")")"
+APPDIR="${APPDIR:-$HERE}"
+
+REPO_ROOT="$APPDIR/usr/share/document-anonymizer"
+PY="$APPDIR/usr/bin/python3"
+
+# Prepend bundled tools so pandoc / pdftotext win over any older
+# system installs (e.g. an Ubuntu LTS pandoc 2.x that fails on
+# --embed-resources). This is the AppImage promise: shipped versions
+# are the ones used at runtime.
+export PATH="$APPDIR/usr/bin:$PATH"
+
+# WeasyPrint resolves system fonts via fontconfig at startup; let it
+# inherit the user's fontconfig so corporate/branded fonts the user
+# has installed still pick up.
+unset FONTCONFIG_PATH 2>/dev/null || true
+
+# Help WeasyPrint find Pango: we don't bundle it (system lib on any
+# modern desktop Linux), so fall back to ldconfig's defaults. If a
+# user's distro is unusually minimal they'll see a clear runtime
+# error from WeasyPrint pointing at libpango.
+unset LD_LIBRARY_PATH 2>/dev/null || true
+
+cd "$REPO_ROOT"
+exec "$PY" -m gui.main "$@"

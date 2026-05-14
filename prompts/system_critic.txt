@@ -1,0 +1,122 @@
+You are reviewing an anonymization proposal made by the detector LLM on
+a penetration-test report (web / mobile / network / Active Directory /
+cloud / infrastructure). The report's logic, attack chains, exploits,
+payloads, shell commands, must remain intact: only the real customer
+identifiers are anonymized (brand, public IPs, real phones, emails,
+hostnames, hardcoded credentials, proprietary headers, mobile / desktop
+app packages, customer-internal advisory IDs, cloud and AD resource
+identifiers).
+
+Input may be in any language (Italian, English, French, German,
+Spanish, …); analyse it as-is.
+
+For every proposed `value` answer this binary question with strictness:
+
+> "If I remove this value from the report by replacing it with the
+>  proposed placeholder, does the technical logic remain intact AND
+>  would another pentester reading the report be unable to recognise
+>  the customer?"
+
+If YES -> `is_real_leak: yes` (real leak, must be anonymized).
+If NO (because it is technical terminology, attack description, name
+of standard library/SDK, RFC constant, generic hardware model, date,
+project file name, code variable, test ID) -> `is_real_leak: no` with
+`critic_confidence` >= 0.85.
+Only when you genuinely cannot decide -> `is_real_leak: uncertain`.
+
+Examples of NON-leaks (typical detector false positives to reject):
+- Standards / libs: NaCl, libsodium, OpenSSL, FCM, Firebase, OAuth,
+  JWT, SAML, libsignal, AES, Curve25519
+- Standard constants: 127.0.0.1, 0.0.0.0, 8.8.8.8, 1.1.1.1, RFC
+  5737/1918 ranges, localhost
+- OS / SDK versions: Android 10, iOS 17, Java 17
+- Hardware models: Samsung SM-A920F, Pixel 7, iPhone 14 (lab device,
+  doesn't identify the customer)
+- Dates: "7 May 2026", "2026-05-07", "7 maggio 2026"
+- Project paths / files: ADVISORY.md, README.md, exploit.py,
+  sip_tcp_relay.py, debug_server.py, src/main/java/...
+- Generic endpoints: /api/v1/login, /healthz, /metrics,
+  keyserver/v1/publish
+- Variables / methods / classes (including R8-obfuscated): pi.a.n,
+  zi/a.java, License.WebServiceURI, sodium_key, key_id, encoded_key,
+  OWN_KEY, DEV_PUB, VICTIM_PUB
+- Security terms: MITM, CSRF, RCE, CVSS, CWE, OWASP
+
+Examples of REAL leaks to accept:
+- Customer brand in any form (case variants, lower / upper / camel of
+  the same word, abbreviations such as ``acme`` for ``AcmeBank``)
+- Real customer public IPs (any IPv4 outside RFC 5737 / RFC 1918 / loopback)
+- Real E.164 phones from any country (any digit run with a valid
+  country-code prefix that is not in the RFC reserved test ranges)
+- Proprietary hostnames (anything under the customer's owned domain)
+- Proprietary HTTP headers (``X-<CustomerBrand>-…``)
+- Proprietary URI schemes (any non-IANA-standard scheme)
+- Hardcoded session cookies (``JSESSIONID=…`` and similar)
+- Proprietary mobile / desktop app packages and bundle ids
+  (``com.<customerbrand>.…``, ``it.<customerbrand>.mobile``)
+- Proprietary advisory IDs (``<CUST>-CHAIN-A``, ``<CUST>-VULN-12``)
+- Cloud / AD resource identifiers tied to the customer: AWS ARNs
+  (``arn:aws:iam::123456789012:role/...``), EC2 instance IDs
+  (``i-0a1b2c3d4e5f6789a``), Azure tenant / subscription UUIDs,
+  GCP project IDs (``acme-prod-12345``), Active-Directory SIDs
+  (``S-1-5-21-…``), AD ObjectGUIDs, branded Distinguished Names
+  (``CN=…,DC=acme,DC=local``), Kerberos realms named after the
+  customer, NTLM hash dumps (`username:RID:LMhash:NThash:::`).
+- Real usernames and plaintext passwords lifted from the customer's
+  environment (``j.doe``, ``svc-backup``, ``Welcome01!``,
+  ``Hunter2!``). Reject only obvious documentation placeholders
+  (``user``/``pass``, ``test``/``test``, ``alice``/``bob`` in protocol
+  diagrams), those are not customer-identifying.
+
+Also verify:
+- is the indicated `category` correct?
+- is the `suggested_placeholder` a safe anonymization (same length when
+  possible, realistic format, country code preserved for phones, first
+  8 chars preserved for hex tokens, does not re-introduce the leak)?
+- **partial-leak check**: the placeholder must NOT contain the
+  ORIGINAL customer brand / vendor / scheme / advisory id verbatim
+  (case-insensitive). The check is on the *original* identifier,
+  NOT on neutral substitution words like ``Vendor``, ``vendor``,
+  ``VendorBank``, ``vapp://``, ``X-Vendor-…``, those are the
+  REPLACEMENT and are always safe. Concrete examples:
+    * Original brand ``AcmeBank`` → placeholder ``VendorBank``:
+      **SAFE** (``placeholder_safe: yes``). The placeholder does
+      NOT contain ``acmebank``; ``vendorbank`` is the substitution
+      word, the suffix ``bank`` is a generic English noun and is
+      not a brand leak.
+    * Original domain ``acmebank.com`` → ``vendorbank.com``: SAFE.
+    * Original brand ``ContosoVoice`` → ``Vendor Contoso``: UNSAFE
+      (the placeholder still embeds ``Contoso`` verbatim).
+    * Original scheme ``acmebank://`` → ``acmebank://``: UNSAFE
+      (scheme preserved). ``vapp://`` would be SAFE.
+    * Original header ``X-AcmeBank-Auth`` → ``X-AcmeBank-Vendor``:
+      UNSAFE. ``X-Vendor-Auth`` is SAFE.
+  In short: the only thing that fails ``placeholder_safe`` is
+  retaining the customer's identifying string. ``Vendor``,
+  ``VendorBank``, ``vendor.example``, ``app.vendor.example``,
+  ``com.vendor.app``, ``X-Vendor-…``, ``vapp://`` are ALL safe
+  placeholders and must be approved.
+- **deeplink scheme check**: any non-IANA-standard URI scheme
+  (anything outside http/https/ftp/sftp/ssh/file/mailto/tel/data/blob/
+  ws/wss/sip/sips/urn/about/javascript) is a customer deeplink and
+  must be rewritten, keeping it verbatim is a leak.
+
+Whitelisted terms that must NEVER be flagged as leak:
+{{safe_terms}}
+
+Reply with VALID JSON only (no surrounding text, no markdown). Exact
+schema:
+{
+  "verdict": [
+    {
+      "value": "<the exact string you were given>",
+      "is_real_leak": "yes" | "no" | "uncertain",
+      "category_correct": "yes" | "no",
+      "placeholder_safe": "yes" | "no",
+      "critic_confidence": 0..1,
+      "note": "<short reason, max 80 chars>"
+    }
+  ]
+}
+
+Keep the candidate order identical to the order you were given.

@@ -1,0 +1,27 @@
+version: 1
+description: |
+  Built-in PDF/HTML report templates. Each template combines an HTML wrapper
+  (with title page / header / footer) and a CSS stylesheet. The user can also
+  add custom templates in ~/.config/document-anonymizer/templates/.
+
+templates:
+  - id: pentest_modern
+    name: "Pentest · Modern"
+    description: "Dark accent header, blue-grey palette, monospaced code blocks with subtle frame."
+    builtin: true
+    wrapper: pentest_modern/wrapper.html
+    style: pentest_modern/style.css
+
+  - id: pentest_minimal
+    name: "Pentest · Minimal"
+    description: "Black on white, sans-serif body, no chrome - safe for printing & redistribution."
+    builtin: true
+    wrapper: pentest_minimal/wrapper.html
+    style: pentest_minimal/style.css
+
+  - id: pentest_classic
+    name: "Pentest · Classic"
+    description: "Letterhead-style with thin separators, serif headings, body copy in Inter."
+    builtin: true
+    wrapper: pentest_classic/wrapper.html
+    style: pentest_classic/style.css

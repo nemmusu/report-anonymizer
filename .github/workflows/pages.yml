@@ -1,0 +1,56 @@
+name: Deploy MkDocs to GitHub Pages
+
+# Public-release configuration.
+#
+# Before the first run:
+#   1. Settings -> Pages -> Source: GitHub Actions.
+#   2. Push to master (or click "Run workflow" once for a manual deploy).
+#
+# Every push to master that touches docs / README / BENCHMARKS will
+# rebuild and redeploy the site.
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "mkdocs.yml"
+      - "docs/**"
+      - "README.md"
+      - "BENCHMARKS.md"
+      - ".github/workflows/pages.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A single in-flight deploy at a time; never cancel an ongoing one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - run: pip install -r docs/requirements.txt
+      - run: mkdocs build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

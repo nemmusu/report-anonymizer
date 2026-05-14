@@ -1,0 +1,611 @@
+#!/usr/bin/env python3
+"""anonymize-dossier CLI.
+
+Sub-commands:
+    scan      Tier-0 + Tier-1 detection (writes auto_promoted_t0/t1.yml + needs_review.yml)
+    promote   Merge auto_promoted_*.yml + needs_review.yml into substitution_map.yml
+    apply     Apply substitution_map.yml to the input -> output mirror
+    build     Rebuild PDF/HTML in the output dir (folder mode only)
+    verify    Sweep the output for residual leaks
+    all       scan -> apply -> build -> verify in one go
+    server    Start/stop the local llama-server
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Optional
+
+# Make the parent package importable when invoking this script directly.
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from anonymize.llm_client import LLMClient  # noqa: E402
+from anonymize.pipeline import (  # noqa: E402
+    stage_apply,
+    stage_build,
+    stage_detect_and_critic,
+    stage_promote,
+    stage_scan_and_rules,
+    stage_verify,
+)
+from anonymize.project import Project  # noqa: E402
+from anonymize.server_manager import ServerConfig, ServerManager  # noqa: E402
+from anonymize.server_profile import MODELS_DIR  # noqa: E402
+
+
+def _print_progress(label: str):
+    last = {"pct": -1}
+
+    def cb(done: int, total: int, where: str) -> None:
+        if total <= 0:
+            return
+        pct = int(100 * done / total)
+        if pct != last["pct"]:
+            last["pct"] = pct
+            sys.stderr.write(f"\r[{label}] {pct:3d}%  {where[:60]:<60s}")
+            sys.stderr.flush()
+        if done >= total:
+            sys.stderr.write("\n")
+
+    return cb
+
+
+def _build_project(args, mode_default: str = "folder") -> Project:
+    sources = [Path(p) for p in args.input]
+    out: Optional[Path] = Path(args.output) if args.output else None
+    if len(sources) == 1 and sources[0].is_dir():
+        proj = Project.for_folder(
+            sources[0], out or sources[0].parent / ("Anonymized_" + sources[0].name)
+        )
+    elif len(sources) == 1 and sources[0].is_file():
+        if out is None:
+            proj = Project.for_single_file(sources[0])
+        else:
+            proj = Project.for_single_file(sources[0], out)
+    else:
+        if out is None:
+            out = sources[0].parent / "Anonymized_multi"
+        proj = Project.for_multi_file(sources, out)
+
+    if args.map:
+        proj.map_path = Path(args.map)
+    if args.patterns:
+        proj.patterns_path = Path(args.patterns)
+    if args.safe_terms:
+        proj.safe_terms_path = Path(args.safe_terms)
+
+    # ``--pending``, ``--auto-t0``, ``--auto-t1``, ``--applied``, ``--report``
+    # and ``--decisions`` default to *bare filenames* (e.g.
+    # ``auto_promoted_t0.yml``). When the user did not pass an absolute path,
+    # anchor those files to the project's output directory so single-file
+    # runs don't sprinkle YAML/JSON next to the input.
+    def _anchor(p: Optional[str]) -> Optional[Path]:
+        if not p:
+            return None
+        pp = Path(p)
+        if pp.is_absolute() or len(pp.parts) > 1:
+            return pp
+        return proj.output_dir / pp
+
+    if args.pending:
+        v = _anchor(args.pending)
+        if v is not None:
+            proj.pending_path = v
+    if args.auto_t0:
+        v = _anchor(args.auto_t0)
+        if v is not None:
+            proj.auto_t0_path = v
+    if args.auto_t1:
+        v = _anchor(args.auto_t1)
+        if v is not None:
+            proj.auto_t1_path = v
+    if args.applied:
+        v = _anchor(args.applied)
+        if v is not None:
+            proj.applied_path = v
+    if args.report:
+        v = _anchor(args.report)
+        if v is not None:
+            proj.verifier_report_path = v
+    if args.decisions:
+        v = _anchor(args.decisions)
+        if v is not None:
+            proj.decisions_path = v
+    if args.llm_url:
+        proj.llm_url = args.llm_url
+    if args.llm_model:
+        proj.llm_model = args.llm_model
+    if args.pdf_strategy:
+        proj.pdf_strategy = args.pdf_strategy
+    if args.t_high is not None:
+        proj.t_high = args.t_high
+    if args.t_low is not None:
+        proj.t_low = args.t_low
+    if args.also_build_pdf_for_md:
+        proj.also_build_pdf_for_md = True
+    if getattr(args, "force_rescan", False):
+        proj.force_rescan = True
+    cs = getattr(args, "chunk_strategy", None)
+    if cs:
+        proj.chunk_strategy = cs
+    dm = getattr(args, "detector_mode", None)
+    if dm:
+        proj.detector_mode = dm
+    return proj
+
+
+def _add_common_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--map", default=str(ROOT / "config" / "substitution_map.yml"))
+    p.add_argument("--patterns", default=str(ROOT / "config" / "leak_patterns.yml"))
+    p.add_argument("--safe-terms", default=str(ROOT / "config" / "safe_terms.yml"))
+    p.add_argument("--pending", default="needs_review.yml")
+    p.add_argument("--auto-t0", default="auto_promoted_t0.yml")
+    p.add_argument("--auto-t1", default="auto_promoted_t1.yml")
+    p.add_argument("--applied", default="applied_substitutions.json")
+    p.add_argument("--report", default="verifier_report.md")
+    p.add_argument("--decisions", default="decisions_history.jsonl")
+    p.add_argument("--llm-url", default=None)
+    p.add_argument("--llm-model", default=None)
+    p.add_argument("--pdf-strategy", choices=("inplace", "rederive"), default=None)
+    p.add_argument("--t-high", type=float, default=None)
+    p.add_argument("--t-low", type=float, default=None)
+    p.add_argument("--also-build-pdf-for-md", action="store_true")
+    p.add_argument(
+        "--chunk-strategy",
+        choices=("structured", "flat"),
+        default=None,
+        help=(
+            "Detector chunker. 'structured' (default) splits at "
+            "Markdown structural boundaries and never breaks inside a "
+            "table / code fence. 'flat' is the legacy character-count "
+            "splitter."
+        ),
+    )
+    p.add_argument(
+        "--detector-mode",
+        choices=("single", "multipass"),
+        default=None,
+        help=(
+            "Detector strategy. 'single' (default) runs one monolithic "
+            "prompt covering all 12 categories per chunk. 'multipass' "
+            "runs 11 focused per-category prompts and merges the "
+            "candidate lists; roughly 5x slower per detector stage but "
+            "measurably higher F1 on small (4B) local models."
+        ),
+    )
+    p.add_argument(
+        "--force-rescan",
+        action="store_true",
+        help=(
+            "Re-detect every leak as if it were the first run: ignore the "
+            "existing substitution_map.yml cache for both Tier-0 rules and "
+            "the LLM detector. For 'all', also delete previous run-state "
+            "files (auto_promoted_*, needs_review.yml, applied_*, "
+            "decisions_history.jsonl, verifier_report.md). The map itself "
+            "is NOT modified."
+        ),
+    )
+
+
+def cmd_scan(args) -> int:
+    proj = _build_project(args)
+    if proj.force_rescan:
+        from anonymize.pipeline import reset_run_state
+        rep = reset_run_state(proj)
+        print(f"[scan] --force-rescan: removed {len(rep['removed'])} state files")
+    print(
+        f"[scan] mode={proj.mode}  input={proj.input_paths[0]}"
+        f"{' [fresh]' if proj.force_rescan else ''}"
+    )
+    scan, t0_cands, r0 = stage_scan_and_rules(
+        proj, progress=_print_progress("rules"), force_rescan=proj.force_rescan
+    )
+    print(f"[scan] {r0.message}")
+    res, r1 = stage_detect_and_critic(
+        proj,
+        scan,
+        t0_cands,
+        progress=_print_progress("LLM"),
+        force_rescan=proj.force_rescan,
+    )
+    print(f"[scan] {r1.message}")
+    return 0 if r1.ok else 2
+
+
+def cmd_promote(args) -> int:
+    proj = _build_project(args)
+    r = stage_promote(proj)
+    print(f"[promote] {r.message}")
+    return 0
+
+
+def cmd_apply(args) -> int:
+    proj = _build_project(args)
+    rep, r = stage_apply(proj, progress=_print_progress("apply"))
+    print(f"[apply] {r.message}")
+    return 0 if r.ok else 1
+
+
+def cmd_build(args) -> int:
+    proj = _build_project(args)
+    # `build` and `verify` operate on an already-anonymized folder: treat the
+    # input as the output to build/verify.
+    proj.output_dir = Path(args.input[0])
+    rep, r = stage_build(proj, progress=_print_progress("build"))
+    print(f"[build] {r.message}")
+    return 0 if r.ok else 1
+
+
+def cmd_verify(args) -> int:
+    proj = _build_project(args)
+    proj.output_dir = Path(args.input[0])
+    if proj.mode == "single":
+        proj.input_paths = [Path(args.input[0])]
+    rep, r = stage_verify(proj)
+    print(f"[verify] {r.message}")
+    if not rep.is_clean:
+        for h in rep.hits[:25]:
+            print(f"  - {h.file}: {h.pattern}: {h.match}")
+        if len(rep.hits) > 25:
+            print(f"  ... +{len(rep.hits)-25} more (see {proj.verifier_report_path})")
+    return 0 if rep.is_clean else 3
+
+
+def cmd_all(args) -> int:
+    proj = _build_project(args)
+    if proj.force_rescan:
+        from anonymize.pipeline import reset_run_state
+        rep = reset_run_state(proj)
+        print(f"[all] --force-rescan: removed {len(rep['removed'])} state files")
+    print(
+        f"[all] mode={proj.mode}  output={proj.output_dir}"
+        f"{' [fresh]' if proj.force_rescan else ''}"
+    )
+    scan, t0_cands, r0 = stage_scan_and_rules(
+        proj, progress=_print_progress("rules"), force_rescan=proj.force_rescan
+    )
+    print(f"[all] {r0.message}")
+    res, r1 = stage_detect_and_critic(
+        proj,
+        scan,
+        t0_cands,
+        progress=_print_progress("LLM"),
+        force_rescan=proj.force_rescan,
+    )
+    print(f"[all] {r1.message}")
+    if not args.skip_promote:
+        rp = stage_promote(proj)
+        print(f"[all] {rp.message}")
+    rep_apply, ra = stage_apply(proj, progress=_print_progress("apply"))
+    print(f"[all] {ra.message}")
+    if proj.mode == "folder" or proj.also_build_pdf_for_md:
+        rep_build, rb = stage_build(proj, progress=_print_progress("build"))
+        print(f"[all] {rb.message}")
+    rep_v, rv = stage_verify(proj)
+    print(f"[all] {rv.message}")
+    if proj.auto_resolve_residuals and getattr(args, "no_auto_resolve", False) is not True:
+        from anonymize.pipeline import stage_auto_resolve_residuals
+
+        audit_llm: Optional[LLMClient] = None
+        if proj.audit_residuals_with_llm:
+            try:
+                audit_llm = LLMClient(
+                    base_url=proj.llm_url,
+                    model=proj.llm_model,
+                    max_workers=proj.concurrency,
+                )
+                if not audit_llm.health(refresh=True):
+                    audit_llm = None
+            except Exception:
+                audit_llm = None
+        _, ar = stage_auto_resolve_residuals(
+            proj,
+            llm=audit_llm,
+            progress=_print_progress("auto-resolve"),
+        )
+        print(f"[all] {ar.message}")
+        if ar.extras.get("final_hits", 0) == 0:
+            return 0
+        return 3
+    return 0 if rv.ok else 3
+
+
+def cmd_selftest(args) -> int:
+    """Run a quick self-check: env tools + import sanity + tiny pipeline."""
+    from anonymize import env_check
+    from anonymize.sub_map import SubstitutionMap
+
+    rc = 0
+    print("[selftest] tools:")
+    rep = env_check.run()
+    for t in rep.tools:
+        mark = "OK " if t.found else "-- "
+        print(f"  {mark} {t.name}{(' ('+t.version+')' if t.version else '')}")
+    if rep.missing_required:
+        rc = 2
+
+    print("[selftest] imports:")
+    import importlib
+    for m in (
+        "anonymize.pipeline",
+        "anonymize.scanner",
+        "anonymize.applier",
+        "anonymize.verifier",
+        "anonymize.server_profile",
+        "anonymize.hf_models",
+        "anonymize.hardware",
+    ):
+        try:
+            importlib.import_module(m)
+            print(f"  OK  {m}")
+        except Exception as e:
+            print(f"  --  {m} ({e})")
+            rc = 1
+
+    print("[selftest] map invariants:")
+    try:
+        smap = SubstitutionMap.load(Path(ROOT / "config" / "substitution_map.yml"))
+        v = smap.validate_invariants()
+        if v:
+            for vio in v:
+                print(f"  -- {vio.code}: {vio.message}")
+            rc = 1
+        else:
+            print("  OK")
+    except Exception as e:
+        print(f"  --  load failed: {e}")
+        rc = 1
+    print("[selftest] done.")
+    return rc
+
+
+def cmd_export_pdf(args) -> int:
+    """Render anonymized markdown/text/html files to PDF via a template.
+
+    Usage:
+        anonymize-dossier export-pdf INPUT [INPUT ...] -o OUT_DIR \
+            --template pentest_modern --title "..."
+    """
+    from anonymize.templates import (  # local import: optional pandoc dep
+        TemplateContext,
+        export_files_to_pdf,
+        get_template,
+        list_templates,
+    )
+
+    if args.list_templates:
+        for t in list_templates():
+            print(f"  {t.id:24s}  {t.name!r:32s}  ({t.source})")
+        return 0
+
+    template = get_template(args.template)
+    if template is None:
+        print(f"unknown template: {args.template}", file=sys.stderr)
+        print("available:", file=sys.stderr)
+        for t in list_templates():
+            print(f"  {t.id}", file=sys.stderr)
+        return 2
+
+    files: list[Path] = []
+    for raw in args.input:
+        p = Path(raw)
+        if p.is_dir():
+            files.extend(sorted(p.rglob("*.md")))
+            files.extend(sorted(p.rglob("*.txt")))
+        elif p.is_file():
+            files.append(p)
+    if not files:
+        print("no input files found", file=sys.stderr)
+        return 2
+
+    out_dir = Path(args.output)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ctx = TemplateContext(
+        title=args.title or "Anonymized report",
+        subtitle=args.subtitle or "",
+        engagement=args.engagement or "",
+        author=args.author or "",
+        classification=args.classification or "ANONYMIZED · INTERNAL",
+        footer=args.footer or "",
+    )
+    if args.date:
+        ctx.date = args.date
+
+    print(f"[export] template={template.id}  files={len(files)}  out={out_dir}")
+    out_pdfs = export_files_to_pdf(files, template=template, ctx=ctx, out_dir=out_dir)
+    for p in out_pdfs:
+        print(f"  -> {p}")
+    return 0
+
+
+def cmd_migrate_map(args) -> int:
+    """One-shot upgrade of stale entries in ``substitution_map.yml``.
+
+    Existing entries (typically committed long before the new
+    shape-preserving placeholder strategies were introduced) keep their
+    legacy ``to:`` even when the engine would now generate a more
+    informative one. ``merge_candidates`` skips already-mapped values,
+    so the upgrade has to happen here, explicitly, when the user opts in.
+    """
+    import shutil
+
+    from anonymize.sub_map import SubstitutionMap, rewrite_placeholders
+
+    map_path = Path(args.map) if args.map else (
+        Path(__file__).resolve().parent.parent / "config" / "substitution_map.yml"
+    )
+    if not map_path.exists():
+        print(f"[migrate-map] map not found: {map_path}")
+        return 2
+    cats = [c.strip() for c in (args.categories or "keys").split(",") if c.strip()]
+    smap = SubstitutionMap.load(map_path)
+    changes = rewrite_placeholders(smap, categories=cats)
+
+    print(f"[migrate-map] map={map_path}  categories={cats}  proposed_changes={len(changes)}")
+    for ch in changes:
+        old = ch["old_to"]
+        new = ch["new_to"]
+        ell_old = old if len(old) <= 40 else old[:18] + "…" + old[-18:]
+        ell_new = new if len(new) <= 40 else new[:18] + "…" + new[-18:]
+        print(f"  {ch['id']:>16s}  {ch['from'][:38]:<38s}  {ell_old}  ->  {ell_new}")
+
+    if not args.apply:
+        print("[migrate-map] dry-run (pass --apply to write changes).")
+        return 0
+    if not changes:
+        print("[migrate-map] nothing to do.")
+        return 0
+    bak = map_path.with_suffix(map_path.suffix + ".bak")
+    shutil.copy2(map_path, bak)
+    smap.save()
+    print(f"[migrate-map] backup written: {bak}")
+    print(f"[migrate-map] {len(changes)} entries upgraded in {map_path}")
+    return 0
+
+
+def cmd_server(args) -> int:
+    cfg = ServerConfig(
+        binary=args.binary,
+        model_path=args.model,
+        port=args.port,
+        host=args.host,
+        ctx_size=args.ctx_size,
+        n_gpu_layers=args.n_gpu_layers,
+    )
+    mgr = ServerManager(cfg)
+    if args.action == "start":
+        ok = mgr.start(wait_seconds=args.wait)
+        print(json.dumps({"ok": ok, "url": cfg.base_url}))
+        return 0 if ok else 1
+    if args.action == "stop":
+        mgr.stop()
+        return 0
+    if args.action == "status":
+        ok = mgr.health(timeout=2)
+        print(json.dumps({"running": ok, "url": cfg.base_url}))
+        return 0
+    return 2
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    p = argparse.ArgumentParser(prog="anonymize-dossier")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    for name, fn, help_text in (
+        ("scan", cmd_scan, "Run Tier-0 + Tier-1 detection"),
+        ("promote", cmd_promote, "Merge approved candidates into substitution_map.yml"),
+        ("apply", cmd_apply, "Apply substitution_map.yml to the input"),
+        ("build", cmd_build, "Rebuild PDFs in the output (folder mode)"),
+        ("verify", cmd_verify, "Scan the output for residual leaks"),
+        ("all", cmd_all, "scan -> promote -> apply -> build -> verify"),
+    ):
+        sp = sub.add_parser(name, help=help_text)
+        sp.add_argument("input", nargs="+")
+        sp.add_argument("--output", "-o", default=None)
+        if name == "all":
+            sp.add_argument("--skip-promote", action="store_true")
+            sp.add_argument(
+                "--no-auto-resolve",
+                action="store_true",
+                help=(
+                    "Skip the verifier-feedback auto-loop after verify. "
+                    "Default: enabled (Project.auto_resolve_residuals)."
+                ),
+            )
+        _add_common_args(sp)
+        sp.set_defaults(func=fn)
+
+    sps = sub.add_parser("server", help="Manage the local llama-server")
+    sps.add_argument(
+        "action", choices=("start", "stop", "status"), default="status", nargs="?"
+    )
+    sps.add_argument(
+        "--binary",
+        default=os.environ.get("LLAMA_SERVER_BIN", "llama-server"),
+        help=(
+            "Path to llama-server (or just 'llama-server' if it's "
+            "on PATH). Override with the LLAMA_SERVER_BIN env var."
+        ),
+    )
+    sps.add_argument(
+        "--model",
+        default=os.environ.get(
+            "LLAMA_MODEL_PATH",
+            str(MODELS_DIR / "unsloth__Qwen3.5-4B-GGUF" / "Qwen3.5-4B-BF16.gguf"),
+        ),
+        help=(
+            "GGUF weights path. Defaults to the shipped default "
+            "preset under MODELS_DIR; override with LLAMA_MODEL_PATH."
+        ),
+    )
+    sps.add_argument("--host", default="127.0.0.1")
+    sps.add_argument("--port", type=int, default=8080)
+    sps.add_argument("--ctx-size", type=int, default=16384)
+    sps.add_argument("--n-gpu-layers", type=int, default=99)
+    sps.add_argument("--wait", type=float, default=120.0)
+    sps.set_defaults(func=cmd_server)
+
+    sst = sub.add_parser("selftest", help="Run environment + import + invariant checks")
+    sst.set_defaults(func=cmd_selftest)
+
+    smm = sub.add_parser(
+        "migrate-map",
+        help=(
+            "Upgrade legacy entries in substitution_map.yml to the current "
+            "shape-preserving placeholder strategies (one-shot)."
+        ),
+    )
+    smm.add_argument(
+        "--map",
+        default=None,
+        help="Path to substitution_map.yml (default: config/substitution_map.yml)",
+    )
+    smm.add_argument(
+        "--categories",
+        default="keys",
+        help="Comma-separated categories to migrate. Default: 'keys'.",
+    )
+    smm.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write changes back. Without this flag, runs a dry-run preview.",
+    )
+    smm.set_defaults(func=cmd_migrate_map)
+
+    spx = sub.add_parser(
+        "export-pdf",
+        help="Render anonymized files to PDF via a template (pentest_modern, ...)",
+    )
+    spx.add_argument("input", nargs="*", default=[])
+    spx.add_argument("--output", "-o", default="./_export_pdf")
+    spx.add_argument(
+        "--template",
+        default="pentest_modern",
+        help="template id (use --list-templates to discover)",
+    )
+    spx.add_argument(
+        "--list-templates",
+        action="store_true",
+        help="just list available templates and exit",
+    )
+    spx.add_argument("--title", default="")
+    spx.add_argument("--subtitle", default="")
+    spx.add_argument("--engagement", default="")
+    spx.add_argument("--author", default="")
+    spx.add_argument("--date", default="")
+    spx.add_argument("--classification", default="")
+    spx.add_argument("--footer", default="")
+    spx.set_defaults(func=cmd_export_pdf)
+
+    args = p.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

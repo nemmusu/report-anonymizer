@@ -1,0 +1,181 @@
+version: 3
+
+# Tier-0 deterministic auto-promote rules. Each match is replaced via
+# either a named strategy (preferred):
+#
+#   placeholder_strategy: phone_intl       # length, country code & carrier preserved
+#   placeholder_strategy: hex_keep_prefix  # first 8 chars kept, rest zeroed + counter
+#   placeholder_strategy: ipv4             # RFC 5737 documentation block
+#
+# or the legacy templated form ``placeholder_template`` (kept for
+# backward compatibility, see ``anonymize/rules_pass.py``).
+#
+# All strategies preserve **byte length** so PDF in-place redaction
+# does not need to reflow or shrink fonts.  Phone strategies share a
+# single canonical bucket so the same physical number always resolves
+# to the same trailing index across italian / bare / international
+# rules.  Hex strategies keep the first 8 characters of the source so
+# pentest readers can still spot related credentials in the anonymized
+# report (key clusters that originally shared a prefix stay grouped).
+auto_promote:
+  - name: italian_mobile
+    regex: '\+?39[ -]?3\d{2}[ -]?\d{6,7}'
+    category: phones
+    placeholder_strategy: phone_intl
+    allow:
+      # Already-anonymized shapes produced by ``phone_intl``:
+      # optional ``+39`` country code + carrier digits + zero
+      # padding + short trailing index. The body may contain a
+      # short non-zero prefix produced by stable_index ≥ 10000
+      # (e.g. ``+393337310000``: ``733`` is the carrier, body
+      # ``10000`` has 4 trailing zeros), so we accept any body
+      # whose tail is a run of ≥4 zeros plus 0-4 digits.
+      - '\+?39[ ]?3\d{2}[ ]?\d{0,4}0{4,}\d{0,4}'
+
+  - name: bare_it_mobile
+    # Bare 10-digit IT mobile (3XX followed by 7 digits) without country
+    # prefix, e.g. data files that use the local number as a key.
+    regex: '(?<!\d)3\d{2}\d{7}(?!\d)'
+    category: phones
+    placeholder_strategy: phone_intl
+    allow:
+      - '3\d{2}0{4,}\d{1,4}'
+
+  - name: e164_generic
+    # E.164 international numbers (with leading +). Catches phone numbers
+    # outside Italy or with truncated/non-standard country codes.
+    regex: '\+\d{8,14}'
+    category: phones
+    placeholder_strategy: phone_intl
+    allow:
+      # Generic placeholder shape: ``+CC`` + 1-3 carrier digits +
+      # ``0000`` (or longer zero run) + short trailing index. Matches
+      # ``+393330000001``, ``+15550000001``, ``+447700000001`` etc.
+      # The middle digits may include a non-zero stable-index
+      # remainder (``+393337310000``); we accept any body that
+      # ends in ≥4 consecutive zeros + a 0-4 digit suffix.
+      - '\+\d{1,3}\d{0,4}0{4,}\d{1,4}'
+      - '\+\d{1,4}\d{0,6}0{4,}\d{0,4}'
+      - '\+0{6,}\d{1,4}'
+      - '\+10{6,}\d{1,4}'
+
+  - name: intl_phone_separated
+    # International phone with separators (space, dash, dot, parens).
+    # Examples: ``+1 (415) 555-1234``, ``+44 7700 900123``,
+    # ``+33-1-23-45-67-89``.  The strategy preserves the +CC, the carrier
+    # block and every separator literally.
+    # Each group MUST be 2-4 digits (avoids matching short numeric
+    # fragments embedded in base64 keys like
+    # ``…c+236SamfC2Xzi2Te2c=`` where the regex used to grab "+236"
+    # as if it were a real phone) and at least 3 groups must follow
+    # the country code, so the minimum total digits is 1+6=7.
+    regex: '\+[1-9]\d{0,2}(?:[ \-.]?\(?\d{2,4}\)?){3,5}'
+    category: phones
+    placeholder_strategy: phone_intl
+    allow:
+      # Already-anonymized: digits collapse to ``+CC<carrier>0{4,}NNN``
+      # (no separators) OR same shape with separators preserved.
+      - '\+\d{1,3}\d{0,4}0{4,}\d{1,4}'
+      - '\+\d{1,3}(?:[ \-.]\(?\d{1,4}\)?){0,3}[ \-.]?0{4,}\d{1,4}'
+      # Placeholders produced by ``phone_intl`` that interleave
+      # zero-runs with separators across multiple groups
+      # (``+1-415-000-0001``, ``+44 20 7000 0002``,
+      # ``+33 1 70 00 00 03``, ``+81 3-3200-0005``,
+      # ``+1 (415) 000-0001``). Permissive shape: country code +
+      # 0-4 carrier-style groups, then a run of ≥2 zeros, then up
+      # to 3 short trailing groups (the sequential index).
+      - '\+\d{1,3}(?:[ \-.]?\(?\d{1,4}\)?){0,4}[ \-.]?0{2,}(?:[ \-.]?\d{0,4}){0,3}'
+
+  - name: real_ipv4
+    regex: '\b(?:\d{1,3}\.){3}\d{1,3}\b'
+    category: network
+    placeholder_strategy: ipv4
+    allow:
+      - '127\.0\.0\.1'
+      - '0\.0\.0\.0'
+      - '203\.0\.113\.\d+'
+      - '198\.51\.100\.\d+'
+      - '192\.0\.2\.\d+'
+      - '192\.168\.\d+\.\d+'
+      - '10\.\d+\.\d+\.\d+'
+      - '172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+'
+      - '8\.8\.8\.8'
+      - '8\.8\.4\.4'
+      - '1\.1\.1\.1'
+      - '255\.255\.255\.\d+'
+
+  - name: hex_credentials_32
+    regex: '\b[a-fA-F0-9]{32}\b'
+    category: keys
+    placeholder_strategy: hex_keep_prefix
+    allow:
+      - '0{32}'
+      - '[fF]{32}'
+      # Legacy already-anonymized shape: long zero prefix + short hex index
+      - '0{24}[a-fA-F0-9]{1,8}'
+      # New shape (hex_keep_prefix): 8 source chars kept + zeros + index
+      - '[a-fA-F0-9]{8}0{16,}[a-fA-F0-9]{1,8}'
+
+  - name: hex_credentials_64
+    regex: '\b[a-fA-F0-9]{64}\b'
+    category: keys
+    placeholder_strategy: hex_keep_prefix
+    allow:
+      - '0{64}'
+      - '[fF]{64}'
+      - '0{56}[a-fA-F0-9]{1,8}'
+      - '[a-fA-F0-9]{8}0{48,}[a-fA-F0-9]{1,8}'
+
+  - name: aws_arn
+    # Amazon Resource Name. Match the canonical
+    # ``arn:partition:service:region:account-id:resource`` shape and
+    # let ``infra_id`` rewrite the account / resource segments while
+    # keeping the partition + service prefix intact.
+    regex: 'arn:[a-z][a-z0-9-]*:[a-z0-9-]*:[a-z0-9-]*:[0-9]*:[A-Za-z0-9_/.:+@-]+'
+    category: infra_ids
+    placeholder_strategy: infra_id
+    allow:
+      - 'arn:aws:iam::0+:vendor-\d+'
+      - 'arn:aws:[a-z0-9-]+:[a-z0-9-]*:0+:vendor-\d+'
+
+  - name: ec2_instance_id
+    # AWS EC2 instance identifier (also matches the same shape used
+    # by EBS volumes ``vol-…`` if the user has those). Length is 17
+    # hex characters in current AWS regions, 8 in legacy.
+    regex: '\bi-[a-f0-9]{8,17}\b'
+    category: infra_ids
+    placeholder_strategy: infra_id
+    allow:
+      - 'i-[a-f0-9]{8}0+[a-f0-9]{1,8}'
+
+  - name: cloud_uuid
+    # UUID v4 / v5 used by Azure tenant / subscription IDs and AD
+    # ObjectGUIDs. The placeholder keeps the first block of source
+    # hex and zeros the rest, so two distinct UUIDs stay
+    # distinguishable in the report.
+    regex: '\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b'
+    category: infra_ids
+    placeholder_strategy: infra_id
+    allow:
+      - '[0-9a-fA-F]{8}-0{4}-0{4}-0{4}-0+[0-9a-fA-F]{1,8}'
+
+  - name: ad_sid
+    # Active-Directory security identifier
+    # (``S-1-5-21-…`` for domains, ``S-1-5-32-…`` for built-in
+    # groups).  Per-domain sub-authorities are customer-tied; we
+    # rewrite them while keeping the well-known authority prefix.
+    regex: '\bS-1-5-(?:21|32)-\d+(?:-\d+){0,4}\b'
+    category: infra_ids
+    placeholder_strategy: infra_id
+    allow:
+      - 'S-1-5-(?:21|32)-0+'
+
+# The verifier no longer relies on hard-coded vendor-specific
+# regexes here. Per-run patterns are derived dynamically from the
+# active ``substitution_map.yml`` (see ``anonymize/verifier.py:
+# build_dynamic_verify_patterns``) so the engine works with any
+# customer brand without editing this file.
+#
+# Add entries below ONLY for *generic* residual-leak shapes that
+# never depend on a specific vendor (left intentionally empty).
+verify_only: []

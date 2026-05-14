@@ -1,0 +1,9 @@
+# Pinned MkDocs stack used by .github/workflows/pages.yml.
+# Bump deliberately when going public so the deploy is reproducible.
+mkdocs==1.6.1
+mkdocs-material==9.5.49
+pymdown-extensions==10.12
+# pymdown-extensions 10.12 passes filename=None to Pygments' HtmlFormatter,
+# which Pygments 2.20.0 then runs through html.escape() and crashes on. Hold
+# Pygments at the last 2.19.x until the pymdownx upgrade lands.
+pygments==2.19.2
