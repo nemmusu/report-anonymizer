@@ -2,9 +2,11 @@ name: Deploy MkDocs to GitHub Pages
 
 # Public-release configuration.
 #
-# Before the first run:
-#   1. Settings -> Pages -> Source: GitHub Actions.
-#   2. Push to master (or click "Run workflow" once for a manual deploy).
+# Pages is auto-enabled on the first run via
+# ``actions/configure-pages@v5`` with ``enablement: true``, so a
+# freshly-created repo doesn't need a manual Settings -> Pages
+# toggle anymore. The workflow already declares ``permissions:
+# pages: write`` which is what the action needs to flip the bit.
 #
 # Every push to master that touches docs / README / BENCHMARKS will
 # rebuild and redeploy the site.
@@ -42,6 +44,8 @@ jobs:
       - run: pip install -r docs/requirements.txt
       - run: mkdocs build
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
